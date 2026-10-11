@@ -19,7 +19,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 from syrupy.assertion import SnapshotAssertion
 
-from custom_components.comfoconnect_pro.comfoconnect_pro_modbus import address
+from custom_components.comfoconnect_pro.comfoconnect_pro_modbus.model import address
 
 pytestmark = pytest.mark.parametrize("platforms", [[Platform.SWITCH]])
 

@@ -10,8 +10,9 @@ from homeassistant.components.number import (
 )
 from homeassistant.const import ATTR_ENTITY_ID, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from modbus_connection import IllegalDataValueError
 from modbus_connection.mock import MockModbusUnit, WriteEvent
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -19,7 +20,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 from syrupy.assertion import SnapshotAssertion
 
-from custom_components.comfoconnect_pro.comfoconnect_pro_modbus import address
+from custom_components.comfoconnect_pro.comfoconnect_pro_modbus.model import address
 
 pytestmark = pytest.mark.parametrize("platforms", [[Platform.NUMBER]])
 
@@ -70,10 +71,17 @@ async def test_set_value(
 
 
 @pytest.mark.usefixtures("init_integration")
-async def test_boost_time_between_limits(
-    hass: HomeAssistant, mock_unit: MockModbusUnit
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(70000, id="between_limits"),
+        pytest.param(90.5, id="fraction"),
+    ],
+)
+async def test_invalid_boost_time_is_refused(
+    hass: HomeAssistant, mock_unit: MockModbusUnit, value: float
 ) -> None:
-    """Test a boost time the register cannot hold is refused."""
+    """Test a boost time the register cannot hold is refused, not rounded."""
     writes: list[WriteEvent] = []
     mock_unit.on_write(writes.append)
 
@@ -81,9 +89,27 @@ async def test_boost_time_between_limits(
         await hass.services.async_call(
             NUMBER_DOMAIN,
             SERVICE_SET_VALUE,
-            {ATTR_ENTITY_ID: BOOST_TIME, ATTR_VALUE: 70000},
+            {ATTR_ENTITY_ID: BOOST_TIME, ATTR_VALUE: value},
             blocking=True,
         )
 
     assert exc_info.value.translation_key == "invalid_value"
     assert writes == []
+
+
+@pytest.mark.usefixtures("init_integration")
+async def test_refused_setpoint_write(
+    hass: HomeAssistant, mock_unit: MockModbusUnit
+) -> None:
+    """Test a setpoint write the gateway refuses surfaces as an error."""
+    mock_unit.fail_write(address(0x0004), IllegalDataValueError())
+
+    with pytest.raises(HomeAssistantError) as exc_info:
+        await hass.services.async_call(
+            NUMBER_DOMAIN,
+            SERVICE_SET_VALUE,
+            {ATTR_ENTITY_ID: "number.comfoair_external_setpoint", ATTR_VALUE: 21},
+            blocking=True,
+        )
+
+    assert exc_info.value.translation_key == "write_failed"

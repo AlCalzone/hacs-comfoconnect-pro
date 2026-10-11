@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from modbus_connection.model import gauge, integer
 
+from .errors import InvalidValueError
 from .model import ComfoConnectComponent, address
 
 CO2_ZONES = 8
@@ -44,8 +45,10 @@ class Sensors(ComfoConnectComponent):
 
     def co2(self, zone: int) -> int | None:
         """The CO₂ level in ``zone``, from 1 to 8."""
+        if isinstance(zone, bool) or not isinstance(zone, int):
+            raise InvalidValueError(f"CO2 zone {zone!r} is not an int")
         if not 1 <= zone <= CO2_ZONES:
-            raise ValueError(f"no CO2 zone {zone}")
+            raise InvalidValueError(f"no CO2 zone {zone}")
         value: int | None = getattr(self, f"co2_zone_{zone}")
         return value
 

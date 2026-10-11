@@ -4,11 +4,12 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import override
 
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from modbus_connection import ModbusError
 
+from .comfoconnect_pro_modbus import InvalidValueError
 from .const import DOMAIN
 from .coordinator import ComfoConnectProDataUpdateCoordinator
 
@@ -49,12 +50,23 @@ class ComfoConnectProEntity(CoordinatorEntity[ComfoConnectProDataUpdateCoordinat
         return self.entity_description.component not in self.coordinator.data.failed
 
     async def _async_write(self, write: Awaitable[None]) -> None:
-        """Send a write to the gateway, then refresh."""
+        """Send a write to the gateway, then refresh.
+
+        The refresh runs after a failed write too, because part of a write
+        sequence may have reached the gateway.
+        """
         try:
             await write
+        except InvalidValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_value",
+                translation_placeholders={"error": str(err)},
+            ) from err
         except ModbusError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="write_failed",
             ) from err
-        await self.coordinator.async_request_refresh()
+        finally:
+            await self.coordinator.async_request_refresh()

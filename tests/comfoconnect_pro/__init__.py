@@ -3,7 +3,7 @@
 from homeassistant.const import CONF_DEVICE, CONF_HOST, CONF_PORT, CONF_TYPE
 from modbus_connection.mock import MockModbusUnit
 
-from custom_components.comfoconnect_pro.comfoconnect_pro_modbus import address
+from custom_components.comfoconnect_pro.comfoconnect_pro_modbus.model import address
 from custom_components.comfoconnect_pro.const import (
     CONF_BAUDRATE,
     CONF_PARITY,

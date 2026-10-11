@@ -9,13 +9,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from modbus_connection import ModbusError
+from modbus_connection import (
+    GatewayPathUnavailableError,
+    GatewayTargetError,
+    ModbusError,
+)
 from propcache.api import cached_property
 
 from .comfoconnect_pro_modbus import ComfoConnectPro, UpdateReport
 from .const import DOMAIN, MANUFACTURER, MODEL, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
+
+GATEWAY_ERRORS = (GatewayPathUnavailableError, GatewayTargetError)
 
 
 class ComfoConnectProDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
@@ -39,7 +45,6 @@ class ComfoConnectProDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
             update_interval=timedelta(seconds=SCAN_INTERVAL),
         )
         self.device = device
-        self._failing: set[str] = set()
 
     @cached_property
     def device_info(self) -> dr.DeviceInfo:
@@ -59,8 +64,15 @@ class ComfoConnectProDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="modbus_error",
+                translation_placeholders={"error": str(err) or type(err).__name__},
             ) from err
         if report.failed and not report.updated:
+            if all(isinstance(err, GATEWAY_ERRORS) for err in report.failed.values()):
+                # The gateway refuses every read once it loses the unit
+                raise UpdateFailed(
+                    translation_domain=DOMAIN,
+                    translation_key="no_path_to_unit",
+                )
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="no_component_answered",
@@ -70,26 +82,12 @@ class ComfoConnectProDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
 
         status = self.device.status
         if "status" in report.updated and not status.is_connected:
-            state = status.connection_state
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="no_ventilation_unit",
-                translation_placeholders={
-                    "state": "unknown" if state is None else str(state.value)
-                },
+                translation_placeholders={"state": str(status.connection_code)},
             )
 
-        for name, cause in report.failed.items():
-            if name not in self._failing:
-                _LOGGER.warning(
-                    "%s: %s failed to refresh and is unavailable: %s",
-                    self.name,
-                    name,
-                    cause,
-                )
-        for name in self._failing & report.updated:
-            _LOGGER.info("%s: %s is available again", self.name, name)
-        self._failing = (self._failing - report.updated) | set(report.failed)
         return report
 
 

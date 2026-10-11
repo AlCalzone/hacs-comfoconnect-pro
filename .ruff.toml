@@ -49,6 +49,7 @@ max-complexity = 25
     "ARG001", # Fixtures are requested for their side effects
     "ARG005",
     "D104",
+    "D213",
     "D401",
     "PLR0913",
     "PLR2004",
